@@ -1,6 +1,6 @@
 {
   "name": "pi-private-input",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Private credential input and explicit SSH/sudo helpers for Pi.",
   "type": "module",
   "license": "MIT",
