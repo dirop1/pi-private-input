@@ -1,0 +1,23 @@
+{
+  "name": "pi-private-input",
+  "version": "0.1.0",
+  "description": "Private credential input and explicit SSH/sudo helpers for Pi.",
+  "type": "module",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "git+https://github.com/dirop1/pi-private-input.git" },
+  "homepage": "https://github.com/dirop1/pi-private-input#readme",
+  "bugs": { "url": "https://github.com/dirop1/pi-private-input/issues" },
+  "keywords": ["pi-package", "private", "credentials", "ssh", "sudo"],
+  "files": ["src", "README.md", "LICENSE"],
+  "pi": { "extensions": ["./src/index.ts"] },
+  "engines": { "node": ">=22" },
+  "scripts": {
+    "test": "node --test",
+    "check": "node --check src/core.mjs && node --check src/askpass.mjs && node --check src/agent-guardian.mjs && node --check src/panel.mjs && node --experimental-strip-types --check src/index.ts"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "typebox": "*"
+  }
+}
