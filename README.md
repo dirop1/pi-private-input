@@ -4,6 +4,8 @@ Private credential input and explicit SSH/sudo helpers for Pi. Secrets stay out 
 
 The model never sees the secret. It receives a one-use opaque handle and consumes it only with explicit user confirmation: writing an env variable to a dotenv file, injecting it into a single command's environment, or piping it to stdin.
 
+![Private credential input modal](./assets/private-input.webp)
+
 ## Install
 
 From npm:

@@ -1,6 +1,6 @@
 {
   "name": "pi-private-input",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Private credential input and explicit SSH/sudo helpers for Pi.",
   "type": "module",
   "license": "MIT",
@@ -8,8 +8,8 @@
   "homepage": "https://github.com/dirop1/pi-private-input#readme",
   "bugs": { "url": "https://github.com/dirop1/pi-private-input/issues" },
   "keywords": ["pi-package", "private", "credentials", "ssh", "sudo"],
-  "files": ["src", "README.md", "LICENSE"],
-  "pi": { "extensions": ["./src/index.ts"] },
+  "files": ["src", "assets", "README.md", "LICENSE"],
+  "pi": { "image": "https://raw.githubusercontent.com/dirop1/pi-private-input/main/assets/private-input.webp", "extensions": ["./src/index.ts"] },
   "engines": { "node": ">=22" },
   "scripts": {
     "test": "node --test",
