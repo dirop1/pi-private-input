@@ -9,7 +9,7 @@ import { fileURLToPath } from 'node:url';
 import { SecretStore, cleanLabel, createAskpass, findKeys, redact, run, shellQuote, validateSecret, writeEnvFile } from './core.mjs';
 import { renderPrivatePanel } from './panel.mjs';
 
-// Process-scoped agent ownership survives conversation switches and /reload.
+// Process-scoped ssh-agent ownership survives conversation switches and /reload.
 // Secrets and askpass channels are operation/session-scoped, never serialized.
 const RUNTIME = Symbol.for('pi-private-input.runtime.v1');
 type Runtime = {
@@ -138,22 +138,22 @@ export default function privateInput(pi: ExtensionAPI) {
       guardian.unref();
       process.once('exit', () => { guardian.kill('SIGTERM'); });
     } catch {
-      guardian.kill('SIGTERM'); await rm(directory, { recursive: true, force: true }); throw new Error('Unable to start a private SSH agent.');
+      guardian.kill('SIGTERM'); await rm(directory, { recursive: true, force: true }); throw new Error('Unable to start a private ssh-agent.');
     }
   }
 
-  async function unlock(ctx: ExtensionContext, active: AbortSignal) {
+  async function unlock(ctx: ExtensionContext, active: AbortSignal, reason = 'User requested SSH key loading.') {
     const keys = await findKeys();
     if (!keys.length) return safeResult('No key pairs with matching .pub files found in ~/.ssh.', true);
     let key = keys[0];
     if (keys.length > 1) {
-      const selected = await ctx.ui.select('Select SSH key to load', keys.map(item => item.label), { signal: active });
+      const selected = await ctx.ui.select(`Select SSH key to load — ${cleanLabel(reason)}`, keys.map(item => item.label), { signal: active });
       if (!selected) return safeResult('SSH unlock cancelled.');
       key = keys.find(item => item.label === selected)!;
     }
-    if (!await ctx.ui.confirm('Load SSH key?', `${key.label}\nThe key becomes available to SSH/Git in this Pi process. An inherited/shared agent is not cleared when Pi exits.`, { signal: active })) return safeResult('SSH unlock cancelled.');
+    if (!await ctx.ui.confirm('Load SSH key?', `Reason: ${cleanLabel(reason)}\n${key.label}\nSSH/Git launched by Pi can use this key. If Pi reuses an existing ssh-agent, other terminals connected to it can also use the key, and closing Pi will not unload it. If Pi starts its own ssh-agent, that ssh-agent stops when Pi exits.`, { signal: active })) return safeResult('SSH unlock cancelled.');
     await ensureAgent(active);
-    const bridge = await createAskpass(prompt => secretPrompt(ctx, 'SSH key passphrase', prompt, active), { signal: active });
+    const bridge = await createAskpass(prompt => secretPrompt(ctx, 'SSH key passphrase', `Reason: ${cleanLabel(reason)}\n${prompt}`, active), { signal: active });
     try {
       const result = await run('ssh-add', [key.path], { env: bridge.env, signal: active });
       // ssh-add diagnostics reveal key paths/comments; return fixed state only.
@@ -167,7 +167,7 @@ export default function privateInput(pi: ExtensionAPI) {
     if (host) {
       // The password is consumed by a fixed bootstrap, never by the approved
       // command's stdin. Shell tracing/startup injection is disabled remotely.
-      const password = await secretPrompt(ctx, 'Remote sudo password', `Destination: ${host}`, active);
+      const password = await secretPrompt(ctx, 'Remote sudo password', `${reason ? `Reason: ${cleanLabel(reason)}\n` : ''}Destination: ${host}`, active);
       if (!password) return safeResult('Sudo request cancelled.');
       const input = Buffer.concat([password, Buffer.from('\n')]);
       const bootstrap = [
@@ -185,7 +185,7 @@ export default function privateInput(pi: ExtensionAPI) {
         return commandResult(result, [password]);
       } finally { input.fill(0); password.fill(0); }
     }
-    const bridge = await createAskpass(prompt => secretPrompt(ctx, 'Sudo password', prompt, active), { signal: active });
+    const bridge = await createAskpass(prompt => secretPrompt(ctx, 'Sudo password', `${reason ? `Reason: ${cleanLabel(reason)}\n` : ''}${prompt}`, active), { signal: active });
     try {
       const args = command ? ['-A', '--', 'bash', '--noprofile', '--norc', '-c', command] : ['-A', '-v'];
       const env = { ...bridge.env }; delete env.BASH_ENV;
@@ -197,11 +197,14 @@ export default function privateInput(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: 'private_input', label: 'Private Input',
-    description: 'Ask the user for a secret in a private masked terminal modal. Returns a one-use opaque handle, never the secret. Do not ask the user to paste credentials into chat. Use private_apply to write/inject the handle.',
-    parameters: Type.Object({ label: Type.String({ maxLength: 200, description: 'Public purpose/name only, never a secret.' }) }),
+    description: 'Ask the user for a secret in a private masked terminal modal. Returns a one-use opaque handle, never the secret. Do not ask the user to paste credentials into chat. Use private_apply to write/inject the handle. You must provide a public reason explaining why the secret is needed and how it will be used.',
+    parameters: Type.Object({
+      label: Type.String({ maxLength: 200, description: 'Public credential name only, never a secret.' }),
+      reason: Type.String({ minLength: 1, maxLength: 200, pattern: '\\S', description: 'Required public explanation of why this secret is needed and how it will be used. Never include credentials.' }),
+    }),
     async execute(_id, params, signal, _update, ctx) {
       return operation(ctx, signal, async active => {
-        const value = await secretPrompt(ctx, 'Private input', params.label, active);
+        const value = await secretPrompt(ctx, 'Private input', `Reason: ${cleanLabel(params.reason)}\n${cleanLabel(params.label)}`, active);
         if (!value) return safeResult('Private input cancelled.');
         try { return safeResult(`Private input ready: ${state.store.put(value)}\nUse this handle once with private_apply. It expires on reload or conversation change.`); }
         finally { value.fill(0); }
@@ -242,14 +245,14 @@ export default function privateInput(pi: ExtensionAPI) {
 
   pi.registerTool({
     name: 'ssh_unlock', label: 'Unlock SSH Key',
-    description: 'Explicitly ask the user to select/load a local SSH key for Git/SSH. A private modal sends the passphrase only to ssh-add. Reuses an accessible agent, even when empty; otherwise starts a Pi-owned agent. Never retry failed SSH operations automatically.',
-    parameters: Type.Object({}),
-    execute(_id, _params, signal, _update, ctx) { return operation(ctx, signal, active => unlock(ctx, active)); },
+    description: 'Explicitly ask the user to select/load a local SSH key for Git/SSH. A private modal sends the passphrase only to ssh-add. Reuses an accessible ssh-agent, even when empty; otherwise starts a Pi-owned ssh-agent. Never retry failed SSH operations automatically. You must provide a public reason explaining which SSH/Git operation needs the key.',
+    parameters: Type.Object({ reason: Type.String({ minLength: 1, maxLength: 200, pattern: '\\S', description: 'Required public explanation of which SSH/Git operation needs the key. Never include credentials.' }) }),
+    execute(_id, params, signal, _update, ctx) { return operation(ctx, signal, active => unlock(ctx, active, params.reason)); },
   });
   pi.registerTool({
     name: 'sudo_exec', label: 'Privileged Command',
     description: 'Run an explicitly user-approved sudo command locally or on a POSIX SSH host. Credentials are entered privately and not cached by this extension. Remote SSH must already authenticate non-interactively (use ssh_unlock first). Use this instead of guessing credentials or repeatedly trying sudo in bash.',
-    parameters: Type.Object({ command: Type.String(), host: Type.Optional(Type.String()), reason: Type.String({ description: 'Public explanation; no credentials.' }) }),
+    parameters: Type.Object({ command: Type.String(), host: Type.Optional(Type.String()), reason: Type.String({ minLength: 1, maxLength: 200, pattern: '\\S', description: 'Required public explanation of why this privileged command is needed; no credentials.' }) }),
     execute(_id, params, signal, _update, ctx) { return operation(ctx, signal, active => sudo(ctx, active, params.command, params.host, params.reason)); },
   });
 

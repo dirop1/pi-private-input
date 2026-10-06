@@ -26,6 +26,15 @@ test('private modal has complete borders, padding, title, purpose, masked field 
   for (const content of ['PRIVATE INPUT', 'LOCAL ONLY', 'Service API key', '••••', 'Enter submit', 'Esc cancel', '85s']) assert.ok(text.includes(content));
 });
 
+test('public reason and credential label are visible in authentication modals', () => {
+  for (const title of ['Private input', 'SSH key passphrase', 'Sudo password']) {
+    const rows = renderPrivatePanel({ width: 72, height: 19, title, message: 'Reason: Authenticate the requested Git fetch.\nCredential: SSH key', length: 0 }, api);
+    const text = rows.join('\n');
+    assert.ok(text.includes('Reason: Authenticate the requested Git fetch.'));
+    assert.ok(text.includes('Credential: SSH key'));
+  }
+});
+
 test('narrow layouts and long context remain bounded; only a count is accepted for masking', () => {
   for (const width of [8, 20, 36, 72]) {
     const rows = renderPrivatePanel({ width, title: 'SSH key passphrase', message: 'A long public context line '.repeat(40), length: 65536, seconds: 1 }, api);
